@@ -6,7 +6,8 @@
 -record(client_st, {
     gui, % atom of the GUI process
     nick, % nick/username of the client
-    server % atom of the chat server
+    server, % atom of the chat server
+    channel
 }).
 
 % Return an initial state record. This is called from GUI.
@@ -15,7 +16,8 @@ initial_state(Nick, GUIAtom, ServerAtom) ->
     #client_st{
         gui = GUIAtom,
         nick = Nick,
-        server = ServerAtom
+        server = ServerAtom,
+        channel = []
     }.
 
 % handle/2 handles each kind of request from GUI
@@ -28,18 +30,38 @@ initial_state(Nick, GUIAtom, ServerAtom) ->
 
 % Join channel
 handle(St, {join, Channel}) ->
+%%    genserver:request(St, {join, Channel});
+
+    io:format("~nin the join handler (Client)~n"),
+    case whereis(St#client_st.server) of
+        undefined -> {reply, {error, server_not_reached, "no server active to join"}, St};
+        _ -> case lists:member(Channel, St#client_st.channel) of
+                 true -> {reply, {error, user_already_joined, "user already joined"}, St}; %already in the channel.
+                 false -> try
+                              {A, B ,C} = St#client_st.server ! {self(), join, Channel},
+                              New_Channels = [Channel | St#client_st.channel],
+                              New_state = St#client_st{channel = New_Channels},
+                              {reply, ok, New_state}
+                          catch
+                              timeout_error -> {reply, {error, server_not_reached, "join not implemented"}, St}
+                          end
+             end
+    end;
+
     % TODO: Implement this function
     % {reply, ok, St} ;
-    {reply, {error, not_implemented, "join not implemented"}, St} ;
+    %{reply, {error, not_implemented, "join not implemented"}, St} ;
 
 % Leave channel
 handle(St, {leave, Channel}) ->
+    #client_st{gui = GUI, nick = Nick, server = Server} = St,
     % TODO: Implement this function
     % {reply, ok, St} ;
     {reply, {error, not_implemented, "leave not implemented"}, St} ;
 
 % Sending message (from GUI, to channel)
 handle(St, {message_send, Channel, Msg}) ->
+    #client_st{gui = GUI, nick = Nick, server = Server} = St,
     % TODO: Implement this function
     % {reply, ok, St} ;
     {reply, {error, not_implemented, "message sending not implemented"}, St} ;
