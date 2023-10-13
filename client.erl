@@ -30,41 +30,71 @@ initial_state(Nick, GUIAtom, ServerAtom) ->
 
 % Join channel
 handle(St, {join, Channel}) ->
-%%    genserver:request(St, {join, Channel});
+  case whereis(St#client_st.server) of
+    undefined -> {reply, {error, server_not_reached, "no server active to join"}, St};
+    Pid -> case lists:member(Channel, St#client_st.channel) of
+             true -> {reply, {error, user_already_joined, "user already joined"}, St}; %already in the channel.
+             false ->
+               try
+                 case genserver:request(Pid, {self(), join, Channel}) of
+                   {'EXIT', _} ->
+                     {reply, {error, server_not_reached, "server timeout"}, St};
+                   _ ->
+                     New_Channels = [Channel | St#client_st.channel],
+                     New_state = St#client_st{channel = New_Channels},
+                     {reply, ok, New_state}
 
-    io:format("~nin the join handler (Client)~n"),
-    case whereis(St#client_st.server) of
-        undefined -> {reply, {error, server_not_reached, "no server active to join"}, St};
-        _ -> case lists:member(Channel, St#client_st.channel) of
-                 true -> {reply, {error, user_already_joined, "user already joined"}, St}; %already in the channel.
-                 false -> try
-                              {A, B ,C} = St#client_st.server ! {self(), join, Channel},
-                              New_Channels = [Channel | St#client_st.channel],
-                              New_state = St#client_st{channel = New_Channels},
-                              {reply, ok, New_state}
-                          catch
-                              timeout_error -> {reply, {error, server_not_reached, "join not implemented"}, St}
-                          end
-             end
-    end;
+                 end
+               catch
+                 timeout_error -> {reply, {error, server_not_reached, "server timeout"}, St}
+               end
 
-    % TODO: Implement this function
-    % {reply, ok, St} ;
-    %{reply, {error, not_implemented, "join not implemented"}, St} ;
+           end
+  end;
 
 % Leave channel
 handle(St, {leave, Channel}) ->
-    #client_st{gui = GUI, nick = Nick, server = Server} = St,
-    % TODO: Implement this function
-    % {reply, ok, St} ;
-    {reply, {error, not_implemented, "leave not implemented"}, St} ;
+  case lists:member(Channel, St#client_st.channel) of
+    true ->
+      try
+        case genserver:request(list_to_atom(Channel), {self(), leave, Channel}) of
+          {'EXIT', _} ->
+            {reply, {error, server_not_reached, "server timeout"}, St};
+          _ ->
+            NewChannels = lists:delete(Channel, St#client_st.channel),
+            NewState = St#client_st{channel = NewChannels},
+            {reply, ok, NewState}
+        end
+      catch
+        timeout_error -> {reply, {error, server_not_reached, "server timeout"}, St}
+      end;
+    false -> {reply, {error, user_not_joined, "user not in channel"}, St}% not in channel.
+
+  end;
 
 % Sending message (from GUI, to channel)
 handle(St, {message_send, Channel, Msg}) ->
-    #client_st{gui = GUI, nick = Nick, server = Server} = St,
-    % TODO: Implement this function
-    % {reply, ok, St} ;
-    {reply, {error, not_implemented, "message sending not implemented"}, St} ;
+  case whereis(list_to_atom(Channel)) of
+    undefined ->
+      {reply, {error, server_not_reached, "server not up"}, St};
+    _ ->
+      case lists:member(Channel, St#client_st.channel) of
+        true ->
+          try
+            case genserver:request(list_to_atom(Channel), {self(), message_send, Channel, Msg}) of
+              {'EXIT', _} ->
+                {reply, {error, server_not_reached, "Fel i servern"}, St};
+              _ ->
+                {reply, ok, St}
+            end
+          catch
+            timeout_error -> {reply, {error, server_not_reached, "server timeout"}, St}
+          end;
+        false ->
+          {reply, {error, user_not_joined, "user not in channel"}, St}
+      end
+  end;
+
 
 % This case is only relevant for the distinction assignment!
 % Change nick (no check, local only)
