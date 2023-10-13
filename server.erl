@@ -6,22 +6,19 @@
 % Start a new server process with the given name
 % Do not change the signature of this function.
 start(ServerAtom) ->
-%%    io:format("~nServer started~n"),
     catch(unregister(ServerAtom)),
     Pid = genserver:start(ServerAtom, [], fun handler/2),
     Pid.
 
 
 handler(State, {From, join, Channel}) ->
+%%    io:format("~n~n~n IN THE HANDLER!!!!!!!!~n~n"),
     case lists:member(Channel, State) of
-        true -> genserver:request(list_to_atom(Channel), From),
-            {reply, user_already_joined, State};
-%%            case Result of
-%%                ok -> {reply, ok, State};
-%%                _ -> {reply, user_already_joined, State}
-%%            end;
+        true -> genserver:request(list_to_atom(Channel), {From, join, Channel}),
+            {reply, ok, State};
         false -> genserver:start(list_to_atom(Channel), {Channel, [From]}, fun channel_handler:channel_handler/2),
-            {reply, ok, [Channel | State]}
+            NewState = [Channel | State],
+            {reply, ok, NewState}
     end.
 
 
